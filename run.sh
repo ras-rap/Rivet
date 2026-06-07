@@ -4,8 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 PORT="${SV_PORT:-25000}"
-NAME="${SV_NAME:-"Rivet Server"}"
-MAX="${SV_MAXPLAYERS:-8}"
+NAME="${SV_NAME:-"Rivet Free Roam"}"
+MAX="${SV_MAXPLAYERS:-254}"
 PASS="${SV_PASSWORD:-}"
 
 ARGS="-port $PORT -servername \"$NAME\" -maxplayers $MAX"

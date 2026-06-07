@@ -8,12 +8,9 @@
     <AssemblyName>Rivet</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Facepunch.Steamworks" Version="2.3.3" />
+    <PackageReference Include="aelsi2.Facepunch.Steamworks" Version="2.3.4" />
   </ItemGroup>
-  <Target Name="CopySteamDll" AfterTargets="Build">
-    <Copy SourceFiles="$(NuGetPackageRoot)facepunch.steamworks\2.3.3\content\steam_api64.dll"
-          DestinationFolder="$(OutDir)"
-          Condition="Exists('$(NuGetPackageRoot)facepunch.steamworks\2.3.3\content\steam_api64.dll')"
-          SkipUnchangedFiles="true" />
+  <Target Name="CopySteamLib" AfterTargets="Build">
+    <Copy SourceFiles="$(NuGetPackageRoot)facepunch.steamworks.win64\2.5.2\runtimes\linux-x64\native\libsteam_api.so" DestinationFiles="$(OutDir)libsteam_api64.so" Condition="Exists('$(NuGetPackageRoot)facepunch.steamworks.win64\2.5.2\runtimes\linux-x64\native\libsteam_api.so')" SkipUnchangedFiles="true" />
   </Target>
 </Project>
