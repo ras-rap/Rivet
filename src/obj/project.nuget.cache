@@ -1,10 +1,10 @@
 {
   "version": 2,
-  "dgSpecHash": "Se3Gj5FVrAo=",
+  "dgSpecHash": "UXVC0VxSsPM=",
   "success": true,
-  "projectFilePath": "D:\\sd-decomp\\Assembly-CSharp\\standalone\\src\\Rivet.csproj",
+  "projectFilePath": "/run/media/ras/1TB/sd-decomp/Assembly-CSharp/standalone/src/Rivet.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\Bennett\\.nuget\\packages\\facepunch.steamworks\\2.3.3\\facepunch.steamworks.2.3.3.nupkg.sha512"
+    "/home/ras/.nuget/packages/facepunch.steamworks/2.3.3/facepunch.steamworks.2.3.3.nupkg.sha512"
   ],
   "logs": []
 }

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Rivet")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7a98a031a8358198284b9c16553bcf92a8f1257b")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4b9460f1f7f0d267d21f15201e4ca2303f5fcde4")]
 [assembly: System.Reflection.AssemblyProductAttribute("Rivet")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Rivet")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

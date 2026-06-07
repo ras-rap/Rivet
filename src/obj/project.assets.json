@@ -42,26 +42,25 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\Bennett\\.nuget\\packages\\": {}
+    "/home/ras/.nuget/packages/": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "D:\\sd-decomp\\Assembly-CSharp\\standalone\\src\\Rivet.csproj",
+      "projectUniqueName": "/run/media/ras/1TB/sd-decomp/Assembly-CSharp/standalone/src/Rivet.csproj",
       "projectName": "Rivet",
-      "projectPath": "D:\\sd-decomp\\Assembly-CSharp\\standalone\\src\\Rivet.csproj",
-      "packagesPath": "C:\\Users\\Bennett\\.nuget\\packages\\",
-      "outputPath": "D:\\sd-decomp\\Assembly-CSharp\\standalone\\src\\obj\\",
+      "projectPath": "/run/media/ras/1TB/sd-decomp/Assembly-CSharp/standalone/src/Rivet.csproj",
+      "packagesPath": "/home/ras/.nuget/packages/",
+      "outputPath": "/run/media/ras/1TB/sd-decomp/Assembly-CSharp/standalone/src/obj/",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\Users\\Bennett\\AppData\\Roaming\\NuGet\\NuGet.Config",
-        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        "/home/ras/.nuget/NuGet/NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net10.0"
       ],
       "sources": {
-        "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+        "/usr/lib/dotnet/library-packs": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
@@ -107,7 +106,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.103/PortableRuntimeIdentifierGraph.json",
+        "runtimeIdentifierGraphPath": "/usr/lib/dotnet/sdk/10.0.108/PortableRuntimeIdentifierGraph.json",
         "packagesToPrune": {
           "Microsoft.CSharp": "(,4.7.32767]",
           "Microsoft.VisualBasic": "(,10.4.32767]",
