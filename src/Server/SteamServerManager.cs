@@ -57,9 +57,10 @@ public class SteamServerManager : IDisposable
         SteamServer.BotCount = 0;
         SteamServer.MapName = _mapName;
         SteamServer.Passworded = hasPassword;
-        SteamServer.AutomaticHeartbeats = true;
+        SteamServer.AdvertiseServer = true;
 
         Console.WriteLine($"[Steam] Server name=\"{serverName}\", maxPlayers={maxPlayers}, map={_mapName}");
+        Console.WriteLine($"[Steam] AdvertiseServer set to true");
 
         RunCallbacks();
 
@@ -91,8 +92,10 @@ public class SteamServerManager : IDisposable
     {
         _connected = true;
         _loggedOn = true;
-        Console.WriteLine($"[Steam] SUCCESS: Connected to Steam master server — server should appear in browser");
-        Console.WriteLine($"[Steam]   Name=\"{SteamServer.ServerName}\", Map={SteamServer.MapName}, MaxPlayers={SteamServer.MaxPlayers}");
+        Console.WriteLine($"[Steam] SUCCESS: Connected to Steam master server");
+        Console.WriteLine($"[Steam]   SteamId={SteamServer.SteamId}, Name=\"{SteamServer.ServerName}\", Map={SteamServer.MapName}, MaxPlayers={SteamServer.MaxPlayers}");
+        Console.WriteLine($"[Steam]   PublicIp={SteamServer.PublicIp}, QueryPort={_queryPort}");
+        Console.WriteLine($"[Steam]   Make sure UDP port {_queryPort} is reachable from the internet for the server to appear in the browser");
     }
 
     private void OnSteamServersDisconnected(Result result)
