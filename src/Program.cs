@@ -74,6 +74,7 @@ static void RegisterMessages()
     MessageRegistry.Register<MsgPlayersReadyListToClient>(MsgId.MsgPlayersReadyListToClient);
     MessageRegistry.Register<ReverseMsgToServer>(MsgId.ReverseMsgToServer);
     MessageRegistry.Register<ShiftGearServerMsg>(MsgId.ShiftGearServerMsg);
+    MessageRegistry.Register<ShiftGearClientMsg>(MsgId.ShiftGearClientMsg);
     MessageRegistry.Register<ReverseMsgToClient>(MsgId.ReverseMsgToClient);
     MessageRegistry.Register<SetSpawnPointMsgToClient>(MsgId.SetSpawnPointMsgToClient);
     MessageRegistry.Register<MsgCarDataStateAllPlayersToClient>(MsgId.MsgCarDataStateAllPlayersToClient);

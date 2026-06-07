@@ -105,7 +105,7 @@ public class GameServer : IDisposable
         _players = new PlayerManager(10f);
         _hasPassword = !string.IsNullOrEmpty(config.Password);
         _preConnect = new PreConnectServer(config.PreConnectPort);
-        _steam = new SteamServerManager((ushort)config.Port, config.SteamQueryPort, config.ServerName, config.MaxPlayers, _hasPassword);
+        _steam = new SteamServerManager((ushort)config.Port, config.SteamQueryPort, config.ServerName, config.MaxPlayers, _hasPassword, config.SteamVersion);
         _api = new ApiServer(this, config, _log);
 
         Register<ConnectMsg>(MsgId.ConnectMsg, HandleConnect);
@@ -190,6 +190,7 @@ public class GameServer : IDisposable
         if (!string.IsNullOrEmpty(_config.JoinMessage))
             SendChat(p.EndPoint, _config.JoinMessage);
 
+        _steam?.UpdatePlayerCount(_players.PlayerCount);
         _ = SendWebhookAsync($"{p.PlayerName} joined the server");
     }
 
@@ -198,6 +199,7 @@ public class GameServer : IDisposable
         _log.Info($"Player {p.PlayerName} (ID {p.PlayerID}) disconnected");
         if (_playerStates.TryGetValue(p.PlayerID, out var discPs))
             _log.Info($"Player {p.PlayerName} stats - playtime: {discPs.PlayTime:F0}s");
+        _steam?.UpdatePlayerCount(_players.PlayerCount);
         _ = SendWebhookAsync($"{p.PlayerName} left the server");
     }
 

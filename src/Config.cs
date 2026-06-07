@@ -23,6 +23,7 @@ public class Config
     public int[] MapRotationIslands { get; set; } = [-801448567, -839216305, -487119212, -396930304];
     public string DiscordWebhookUrl { get; set; } = "";
     public string JoinMessage { get; set; } = "Welcome to Rivet!";
+    public string SteamVersion { get; set; } = "V0.3.11.1";
     public string ConfigPath { get; set; } = "rivet.json";
 
     private static readonly JsonSerializerOptions JsonOpts = new()

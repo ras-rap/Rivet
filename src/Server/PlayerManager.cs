@@ -83,9 +83,9 @@ public class PlayerManager
         {
             if (_players[i].PlayerID == playerID && _players[i].IsConnected)
             {
-                _players[i].IsConnected = false;
-                OnPlayerDisconnected?.Invoke(_players[i]);
+                var player = _players[i];
                 _players.RemoveAt(i);
+                OnPlayerDisconnected?.Invoke(player);
                 break;
             }
         }
