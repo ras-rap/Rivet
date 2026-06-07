@@ -76,6 +76,7 @@ public class SteamServerManager : IDisposable
         try
         {
             _querySocket = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            _querySocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
             _querySocket.Bind(new IPEndPoint(IPAddress.Any, queryPort));
             _querySocket.Blocking = false;
             Console.WriteLine($"[Steam] Query socket bound to UDP {queryPort}");
