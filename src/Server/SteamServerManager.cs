@@ -14,6 +14,9 @@ public class SteamServerManager : IDisposable
     private bool _loggedOn;
     private bool _connected;
     private readonly string _version;
+    private readonly string _serverName;
+    private readonly int _maxPlayers;
+    private readonly bool _hasPassword;
     private string _mapName = "Pulau Mahkota";
     private float _statusLogTimer;
     private readonly ushort _gamePort;
@@ -30,6 +33,9 @@ public class SteamServerManager : IDisposable
     public SteamServerManager(ushort gamePort, ushort queryPort, string serverName, int maxPlayers, bool hasPassword, string steamVersion)
     {
         _version = steamVersion;
+        _serverName = serverName;
+        _maxPlayers = maxPlayers;
+        _hasPassword = hasPassword;
         _gamePort = gamePort;
         _queryPort = queryPort;
 
@@ -59,14 +65,9 @@ public class SteamServerManager : IDisposable
 
         _initialized = true;
 
-        SteamServer.ServerName = serverName;
-        SteamServer.MaxPlayers = maxPlayers;
-        SteamServer.BotCount = 0;
-        SteamServer.MapName = _mapName;
-        SteamServer.Passworded = hasPassword;
         SteamServer.AdvertiseServer = true;
 
-        Console.WriteLine($"[Steam] Server name=\"{serverName}\", maxPlayers={maxPlayers}, map={_mapName}");
+        Console.WriteLine($"[Steam] Server name=\"{_serverName}\", maxPlayers={_maxPlayers}, map={_mapName}");
         Console.WriteLine($"[Steam] AdvertiseServer set to true");
 
         // On Linux, Steam may not create the query socket automatically.
@@ -171,6 +172,13 @@ public class SteamServerManager : IDisposable
     {
         _connected = true;
         _loggedOn = true;
+
+        SteamServer.ServerName = _serverName;
+        SteamServer.MaxPlayers = _maxPlayers;
+        SteamServer.MapName = _mapName;
+        SteamServer.Passworded = _hasPassword;
+        SteamServer.BotCount = 0;
+
         Console.WriteLine($"[Steam] SUCCESS: Connected to Steam master server");
         Console.WriteLine($"[Steam]   SteamId={SteamServer.SteamId}, Name=\"{SteamServer.ServerName}\", Map={SteamServer.MapName}, MaxPlayers={SteamServer.MaxPlayers}");
         Console.WriteLine($"[Steam]   PublicIp={SteamServer.PublicIp}, QueryPort={_queryPort}");
@@ -205,7 +213,6 @@ public class SteamServerManager : IDisposable
         string desc = MakeGameDescription(currentPlayers, SteamServer.MaxPlayers);
         if (_gameDescriptionProp != null)
             _gameDescriptionProp.SetValue(null, desc);
-        SteamServer.BotCount = Math.Max(0, SteamServer.MaxPlayers - currentPlayers);
     }
 
     private static string MakeGameDescription(int currentPlayers, int maxPlayers)
