@@ -105,8 +105,10 @@ public class GameServer : IDisposable
         _players = new PlayerManager(10f);
         _hasPassword = !string.IsNullOrEmpty(config.Password);
         _preConnect = new PreConnectServer(config.PreConnectPort);
-        _steam = new SteamServerManager((ushort)config.Port, config.SteamQueryPort, config.ServerName, config.MaxPlayers, _hasPassword, config.SteamVersion);
+        _steam = new SteamServerManager((ushort)config.Port, config.SteamQueryPort, config.ServerName, config.MaxPlayers, _hasPassword, config.SteamVersion, _proto.SendRaw);
         _api = new ApiServer(this, config, _log);
+
+        _proto.OnRawPacket += (ep, data) => _steam?.HandleRawPacket(ep, data);
 
         Register<ConnectMsg>(MsgId.ConnectMsg, HandleConnect);
         Register<DisconnectMsg>(MsgId.DisconnectMsg, HandleDisconnect);

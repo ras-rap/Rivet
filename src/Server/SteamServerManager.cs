@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Net;
-using System.Net.Sockets;
 using System.Reflection;
 using Steamworks;
 using Steamworks.Data;
@@ -21,16 +20,15 @@ public class SteamServerManager : IDisposable
     private float _statusLogTimer;
     private readonly ushort _gamePort;
     private readonly ushort _queryPort;
-    private System.Net.Sockets.Socket? _querySocket;
-    private readonly byte[] _recvBuffer = new byte[4096];
-    private readonly Dictionary<IPEndPoint, DateTime> _rateLimit = new();
+    private readonly Action<IPEndPoint, byte[]> _sendResponse;
+    private readonly Dictionary<string, DateTime> _rateLimit = new();
 
     private static readonly PropertyInfo? _gameDescriptionProp = typeof(SteamServer).GetProperty("GameDescription", BindingFlags.Public | BindingFlags.Static);
 
     public bool LoggedOn => _loggedOn;
     public bool Connected => _connected;
 
-    public SteamServerManager(ushort gamePort, ushort queryPort, string serverName, int maxPlayers, bool hasPassword, string steamVersion)
+    public SteamServerManager(ushort gamePort, ushort queryPort, string serverName, int maxPlayers, bool hasPassword, string steamVersion, Action<IPEndPoint, byte[]> sendResponse)
     {
         _version = steamVersion;
         _serverName = serverName;
@@ -38,6 +36,7 @@ public class SteamServerManager : IDisposable
         _hasPassword = hasPassword;
         _gamePort = gamePort;
         _queryPort = queryPort;
+        _sendResponse = sendResponse;
 
         SteamServer.OnSteamServersConnected += OnSteamServersConnected;
         SteamServer.OnSteamServersDisconnected += OnSteamServersDisconnected;
@@ -54,6 +53,7 @@ public class SteamServerManager : IDisposable
                 GamePort = gamePort,
                 QueryPort = queryPort
             };
+            init = init.WithQueryShareGamePort();
 
             SteamServer.Init((AppId)1279510u, init, false);
         }
@@ -69,99 +69,59 @@ public class SteamServerManager : IDisposable
 
         Console.WriteLine($"[Steam] Server name=\"{_serverName}\", maxPlayers={_maxPlayers}, map={_mapName}");
         Console.WriteLine($"[Steam] AdvertiseServer set to true");
-
-        // On Linux, Steam may not create the query socket automatically.
-        // We create our own socket on the query port and manually forward
-        // A2S server queries to/from Steam.
-        try
-        {
-            _querySocket = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-            _querySocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            _querySocket.Bind(new IPEndPoint(IPAddress.Any, queryPort));
-            _querySocket.Blocking = false;
-            Console.WriteLine($"[Steam] Query socket bound to UDP {queryPort}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[Steam] WARNING: Could not bind query socket on UDP {queryPort}: {ex.Message}");
-            Console.WriteLine($"[Steam]   Server may not appear in Steam server browser");
-        }
+        Console.WriteLine($"[Steam] Using GameSocketShare mode — A2S queries handled on game port {gamePort}");
 
         RunCallbacks();
 
         Console.WriteLine($"[Steam] Calling LogOnAnonymous...");
         SteamServer.LogOnAnonymous();
 
-        Console.WriteLine($"[Steam] Server initialized on port {gamePort} (query {queryPort}) v{steamVersion}");
+        Console.WriteLine($"[Steam] Server initialized on port {gamePort} (query shared) v{steamVersion}");
+    }
+
+    public void HandleRawPacket(IPEndPoint source, byte[] data)
+    {
+        if (!_initialized) return;
+        if (data.Length < 4) return;
+        if (data[0] != 0xFF || data[1] != 0xFF || data[2] != 0xFF || data[3] != 0xFF)
+            return;
+
+        var key = source.ToString();
+        var now = DateTime.UtcNow;
+        if (_rateLimit.TryGetValue(key, out var last) && (now - last).TotalMilliseconds < 1)
+            return;
+        _rateLimit[key] = now;
+
+        SteamServer.HandleIncomingPacket(data, data.Length,
+            BitConverter.ToUInt32(source.Address.GetAddressBytes(), 0),
+            (ushort)source.Port);
     }
 
     public void Tick()
     {
         if (!_initialized) return;
 
-        PollQuerySocket();
         RunCallbacks();
-
-        _statusLogTimer += 0.016f;
-        if (_statusLogTimer >= 30f)
-        {
-            _statusLogTimer = 0f;
-            Console.WriteLine($"[Steam] Status — LoggedOn={SteamServer.LoggedOn}, Connected={_connected}, Players={SteamServer.MaxPlayers - SteamServer.BotCount}/{SteamServer.MaxPlayers}, Map={SteamServer.MapName}");
-
-            // Check if query socket is responsive
-            if (_querySocket != null && _querySocket.IsBound)
-                Console.WriteLine($"[Steam]   Query socket OK on UDP {_queryPort}, PublicIp={SteamServer.PublicIp}");
-        }
-    }
-
-    private void PollQuerySocket()
-    {
-        if (_querySocket == null || !_querySocket.IsBound)
-            return;
-
-        while (_querySocket.Poll(0, SelectMode.SelectRead))
-        {
-            try
-            {
-                EndPoint sender = new IPEndPoint(IPAddress.Any, 0);
-                int len = _querySocket.ReceiveFrom(_recvBuffer, 0, _recvBuffer.Length, SocketFlags.None, ref sender);
-                if (len <= 0) continue;
-
-                var ep = (IPEndPoint)sender;
-
-                RateLimit(ep);
-
-                SteamServer.HandleIncomingPacket(_recvBuffer, len, BitConverter.ToUInt32(ep.Address.GetAddressBytes(), 0), (ushort)ep.Port);
-            }
-            catch (Exception)
-            {
-                break;
-            }
-        }
 
         while (SteamServer.GetOutgoingPacket(out var packet))
         {
             try
             {
                 var target = new IPEndPoint(new IPAddress(BitConverter.GetBytes(packet.Address)), packet.Port);
-                _querySocket.SendTo(packet.Data, 0, packet.Size, SocketFlags.None, target);
+                _sendResponse(target, new Span<byte>(packet.Data, 0, packet.Size).ToArray());
             }
             catch (Exception)
             {
                 break;
             }
         }
-    }
 
-    private void RateLimit(IPEndPoint ep)
-    {
-        var now = DateTime.UtcNow;
-        if (_rateLimit.TryGetValue(ep, out var last))
+        _statusLogTimer += 0.016f;
+        if (_statusLogTimer >= 30f)
         {
-            if ((now - last).TotalMilliseconds < 100)
-                return;
+            _statusLogTimer = 0f;
+            Console.WriteLine($"[Steam] Status — LoggedOn={SteamServer.LoggedOn}, Connected={_connected}, Players={SteamServer.MaxPlayers - SteamServer.BotCount}/{SteamServer.MaxPlayers}, Map={SteamServer.MapName}");
         }
-        _rateLimit[ep] = now;
     }
 
     private static void RunCallbacks()
@@ -223,11 +183,7 @@ public class SteamServerManager : IDisposable
 
     public void Dispose()
     {
-        if (_querySocket != null)
-        {
-            try { _querySocket.Close(); } catch { }
-            _querySocket = null;
-        }
+        _rateLimit.Clear();
 
         if (_initialized)
         {

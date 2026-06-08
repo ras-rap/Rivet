@@ -22,6 +22,7 @@ public class PacketProtocol : IDisposable
     private readonly ConcurrentQueue<Action> _mainThreadActions = new();
 
     public event Action<IPEndPoint, byte[]>? OnMessage;
+    public event Action<IPEndPoint, byte[]>? OnRawPacket;
     public event Action<IPEndPoint, int>? OnAckReceived;
 
     public PacketProtocol(int port)
@@ -32,7 +33,10 @@ public class PacketProtocol : IDisposable
     public void Poll()
     {
         while (_transport.TryReceive(out var pkt))
+        {
+            OnRawPacket?.Invoke(pkt.Source, pkt.Data);
             ProcessPacket(pkt.Source, pkt.Data);
+        }
     }
 
     private void ProcessPacket(IPEndPoint source, byte[] data)

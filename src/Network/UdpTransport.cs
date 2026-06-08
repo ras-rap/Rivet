@@ -18,6 +18,8 @@ public class UdpTransport : IDisposable
 
     public int Port { get; }
 
+    public event Action<IPEndPoint, byte[]>? OnRawPacket;
+
     public UdpTransport(int port)
     {
         Port = port;
@@ -41,7 +43,9 @@ public class UdpTransport : IDisposable
                 if (!_running) break;
                 var data = new byte[len];
                 Array.Copy(buf, data, len);
-                _incoming.Enqueue(new Packet((IPEndPoint)remote, data));
+                ep = (IPEndPoint)remote;
+                OnRawPacket?.Invoke(ep, data);
+                _incoming.Enqueue(new Packet(ep, data));
             }
             catch (ObjectDisposedException) { break; }
             catch (Exception)
