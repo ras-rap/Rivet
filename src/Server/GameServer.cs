@@ -939,46 +939,24 @@ public class GameServer : IDisposable
         }
         else if (state.DataComplete)
         {
-            // Forward all chunks to the requesting client
-            int bagPkgs = state.BaguetteBytesLen > 0 ? (state.BaguetteBytesLen - 1) / 480 + 1 : 0;
-            int cccPkgs = state.CCCBytesLen > 0 ? (state.CCCBytesLen - 1) / 480 + 1 : 0;
-
-            for (int i = 0; i < bagPkgs; i++)
+            // Serve only the requested chunk with correct hash
+            byte[] src = msg.IsBaguetteFile ? state.BaguetteData : state.CCCData;
+            int off = msg.BytesArrayIndex * 480;
+            int len = Math.Min(480, src.Length - off);
+            var chunk = new byte[len];
+            Array.Copy(src, off, chunk, 0, len);
+            int hash = ComputeHash(chunk);
+            Send(player.EndPoint, false, new MsgCarDataToClient
             {
-                int off = i * 480;
-                int len = Math.Min(480, state.BaguetteBytesLen - off);
-                var chunk = new byte[len];
-                Array.Copy(state.BaguetteData, off, chunk, 0, len);
-                Send(player.EndPoint, false, new MsgCarDataToClient
-                {
-                    PlayerID = targetPid,
-                    IsBaguetteFile = true,
-                    CarFileName = state.CarFileName,
-                    BaguetteBytesLen = state.BaguetteBytesLen,
-                    CCCBytesLen = state.CCCBytesLen,
-                    BytesArrayIndex = i,
-                    Bytes = chunk,
-                    HashCode = 0
-                });
-            }
-            for (int i = 0; i < cccPkgs; i++)
-            {
-                int off = i * 480;
-                int len = Math.Min(480, state.CCCBytesLen - off);
-                var chunk = new byte[len];
-                Array.Copy(state.CCCData, off, chunk, 0, len);
-                Send(player.EndPoint, false, new MsgCarDataToClient
-                {
-                    PlayerID = targetPid,
-                    IsBaguetteFile = false,
-                    CarFileName = state.CarFileName,
-                    BaguetteBytesLen = state.BaguetteBytesLen,
-                    CCCBytesLen = state.CCCBytesLen,
-                    BytesArrayIndex = i,
-                    Bytes = chunk,
-                    HashCode = 0
-                });
-            }
+                PlayerID = targetPid,
+                IsBaguetteFile = msg.IsBaguetteFile,
+                CarFileName = state.CarFileName,
+                BaguetteBytesLen = state.BaguetteBytesLen,
+                CCCBytesLen = state.CCCBytesLen,
+                BytesArrayIndex = msg.BytesArrayIndex,
+                Bytes = chunk,
+                HashCode = hash
+            });
         }
         else
         {
@@ -1922,5 +1900,14 @@ public class GameServer : IDisposable
     public void ApiDamage(float factor)
     {
         ApplyDamageFactor(factor);
+    }
+
+    // FNV-1a hash matching Utils.ComputeHash in the original game
+    private static int ComputeHash(byte[] data)
+    {
+        int hash = -2128831035;
+        for (int i = 0; i < data.Length; i++)
+            hash = (hash ^ data[i]) * 16777619;
+        return hash;
     }
 }
