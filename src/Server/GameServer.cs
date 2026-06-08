@@ -20,6 +20,7 @@ public class GameServer : IDisposable
     private readonly PreConnectServer? _preConnect;
     private readonly SteamServerManager? _steam;
     private readonly ApiServer? _api;
+    private readonly MatchmakingServerPinger _matchmakingPinger;
     private readonly BanManager _bans = new();
     private readonly LogWriter _log = new();
     private readonly HttpClient _http = new();
@@ -106,6 +107,14 @@ public class GameServer : IDisposable
         _hasPassword = !string.IsNullOrEmpty(config.Password);
         _preConnect = new PreConnectServer(config.PreConnectPort);
         _steam = new SteamServerManager((ushort)config.Port, config.SteamQueryPort, config.ServerName, config.MaxPlayers, _hasPassword, config.SteamVersion, _proto.SendRaw);
+        _matchmakingPinger = new MatchmakingServerPinger(
+            () => _steam?.PublicIP ?? "0.0.0.0",
+            config.Port,
+            config.ServerName,
+            config.MaxPlayers,
+            config.SteamVersion,
+            () => _players.PlayerCount,
+            () => _hasPassword);
         _api = new ApiServer(this, config, _log);
 
         _proto.OnRawPacket += (ep, data) => _steam?.HandleRawPacket(ep, data);
@@ -254,6 +263,7 @@ public class GameServer : IDisposable
         // Poll network
         _proto.Poll();
         _steam?.Tick();
+        _matchmakingPinger.Tick(dt);
 
         // Process incoming messages
         while (_incoming.TryDequeue(out var msg))
@@ -1639,6 +1649,7 @@ public class GameServer : IDisposable
     {
         _api?.Dispose();
         _steam?.Dispose();
+        _matchmakingPinger.Dispose();
         _preConnect?.Dispose();
         _proto.Dispose();
         _http.Dispose();

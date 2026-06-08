@@ -27,6 +27,7 @@ public class SteamServerManager : IDisposable
 
     public bool LoggedOn => _loggedOn;
     public bool Connected => _connected;
+    public string PublicIP { get; private set; } = "0.0.0.0";
 
     public SteamServerManager(ushort gamePort, ushort queryPort, string serverName, int maxPlayers, bool hasPassword, string steamVersion, Action<IPEndPoint, byte[]> sendResponse)
     {
@@ -140,9 +141,11 @@ public class SteamServerManager : IDisposable
         SteamServer.Passworded = _hasPassword;
         SteamServer.BotCount = 0;
 
+        PublicIP = SteamServer.PublicIp?.ToString() ?? "0.0.0.0";
+
         Console.WriteLine($"[Steam] SUCCESS: Connected to Steam master server");
         Console.WriteLine($"[Steam]   SteamId={SteamServer.SteamId}, Name=\"{SteamServer.ServerName}\", Map={SteamServer.MapName}, MaxPlayers={SteamServer.MaxPlayers}");
-        Console.WriteLine($"[Steam]   PublicIp={SteamServer.PublicIp}, QueryPort={_queryPort}");
+        Console.WriteLine($"[Steam]   PublicIp={PublicIP}, QueryPort={_queryPort}");
     }
 
     private void OnSteamServersDisconnected(Result result)
