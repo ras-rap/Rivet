@@ -1706,6 +1706,8 @@ public class GameServer : IDisposable
         var players = _players.Players;
         float globalTime = _globalTime;
 
+        int sentCount = 0;
+
         // Build per-player transform collections
         var allPlayerIDs = new List<byte>();
         var allRigIDs = new List<ushort>();
@@ -1777,7 +1779,10 @@ public class GameServer : IDisposable
                 AngularVelocities = ang.ToArray(),
                 GlobalTime = globalTime
             });
+            sentCount += pIDs.Count;
         }
+        if (sentCount > 0)
+            Console.WriteLine($"[RigSync] Sent {sentCount} rigidbody entries to {players.Count} players, gt={globalTime:F2}");
     }
 
     private void BroadcastAllPlayerCars()
