@@ -611,10 +611,20 @@ public class MsgCarDataToClient : MsgCarDataToServer { }
 public class MsgRequestCarDataToClient : DataObject
 {
     public byte PlayerID { get; set; }
+    public bool IsBaguetteFile { get; set; }
+    public string CarFileName { get; set; } = "";
+    public int BaguetteBytesLen { get; set; } = -1;
+    public int CCCBytesLen { get; set; } = -1;
+    public int BytesArrayIndex { get; set; } = -1;
     public byte PlayerIDOfWhomCarIsRequested { get; set; } = byte.MaxValue;
 
-    protected override List<object> Serialize() => new() { PlayerID, PlayerIDOfWhomCarIsRequested };
-    protected override void Deserialize(List<object> fields) { PlayerID = (byte)fields[0]; PlayerIDOfWhomCarIsRequested = (byte)fields[1]; }
+    protected override List<object> Serialize() => new() { PlayerID, IsBaguetteFile, CarFileName, BaguetteBytesLen, CCCBytesLen, BytesArrayIndex, PlayerIDOfWhomCarIsRequested };
+    protected override void Deserialize(List<object> fields)
+    {
+        PlayerID = (byte)fields[0]; IsBaguetteFile = (bool)fields[1]; CarFileName = (string)fields[2];
+        BaguetteBytesLen = (int)fields[3]; CCCBytesLen = (int)fields[4]; BytesArrayIndex = (int)fields[5];
+        PlayerIDOfWhomCarIsRequested = (byte)fields[6];
+    }
 }
 
 public class MsgRequestCarDataToServer : PlayerIDMsg

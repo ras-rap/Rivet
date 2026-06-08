@@ -73,11 +73,11 @@ public class GameServer : IDisposable
     private class PlayerCarLoadState
     {
         public string CarFileName = "";
-        public int BaguetteBytesLen = -1;
-        public int CCCBytesLen = -1;
-        public List<byte> CarData = new();
-        public int ExpectedHash;
-        public bool IsBaguette;
+        public int BaguetteBytesLen;
+        public int CCCBytesLen;
+        public byte[] BaguetteData = [];
+        public byte[] CCCData = [];
+        public bool DataComplete;
     }
 
     private class CarData
@@ -407,6 +407,7 @@ public class GameServer : IDisposable
                 BroadcastIslandInfo();
                 _log.Info($"Map rotated to island ID {_currentIslandID}");
                 Broadcast(false, new ChatToClientMsg { PlayerID = byte.MaxValue, Message = $"[Server] Map rotated to island ID {_currentIslandID}" });
+                _ = SendWebhookAsync($"Map rotated to island `{_currentIslandID}`");
             }
         }
 
@@ -562,7 +563,7 @@ public class GameServer : IDisposable
         var text = msg.Message.Trim();
         if (text.Length == 0) return;
 
-        Console.WriteLine($"[Chat] {player.PlayerName}: {text}");
+        _ = SendWebhookAsync($"`{player.PlayerName}`: {text}");
 
         if (text.StartsWith("!"))
         {
@@ -588,15 +589,12 @@ public class GameServer : IDisposable
         var player = _players.GetPlayerByID(msg.PlayerID);
         if (player == null) return;
         if (msg.IslandUniqueID == 0) return;
-        Console.WriteLine($"[Island] Player {msg.PlayerID} requested island ID {msg.IslandUniqueID}");
         _currentIslandID = msg.IslandUniqueID;
         BroadcastIslandInfo();
     }
 
-    private void HandleGameStateChange(IPEndPoint ep, MsgMultiplayerGameStateToServer msg)
+    private void HandleGameStateChange(IPEndPoint _ep, MsgMultiplayerGameStateToServer msg)
     {
-        Console.WriteLine($"[GameState] Client sent state: {msg.MultiplayerGameState}, challengeID={msg.BlacklistChallengeUniqueIDToStart}");
-
         Broadcast(false, new MsgMultiplayerGameStateInfoToClient
         {
             MultiplayerGameState = msg.MultiplayerGameState
@@ -775,7 +773,6 @@ public class GameServer : IDisposable
             RotX = msg.SpawnRotX, RotY = msg.SpawnRotY, RotZ = msg.SpawnRotZ
         };
 
-        Console.WriteLine($"[Spawn] Player {msg.PlayerID} spawn at ({msg.SpawnPosX:F1}, {msg.SpawnPosY:F1}, {msg.SpawnPosZ:F1})");
     }
 
     private void HandleCarDataStateOfSelf(IPEndPoint ep, MsgCarDataStateOfSelfToServer msg)
@@ -784,24 +781,42 @@ public class GameServer : IDisposable
         if (player == null) return;
         _players.ResetTimeout(msg.PlayerID);
 
+        int bagLen = msg.BaguetteBytesLen;
+        int cccLen = msg.CCCBytesLen;
+        bool noData = bagLen <= 0;
+
         var state = new PlayerCarLoadState
         {
             CarFileName = msg.CarFileName,
-            BaguetteBytesLen = msg.BaguetteBytesLen,
-            CCCBytesLen = msg.CCCBytesLen
+            BaguetteBytesLen = bagLen,
+            CCCBytesLen = cccLen,
+            BaguetteData = new byte[bagLen > 0 ? bagLen : 0],
+            CCCData = new byte[cccLen > 0 ? cccLen : 0],
+            DataComplete = noData
         };
         _carLoadStates[msg.PlayerID] = state;
 
-        Console.WriteLine($"[CarData] Player {msg.PlayerID} sending car '{msg.CarFileName}' baguetteLen={msg.BaguetteBytesLen} cccLen={msg.CCCBytesLen}");
+        // Request first baguette chunk
+        if (bagLen > 0)
+        {
+            Send(ep, false, new MsgRequestCarDataToClient
+            {
+                PlayerID = msg.PlayerID,
+                PlayerIDOfWhomCarIsRequested = msg.PlayerID,
+                IsBaguetteFile = true,
+                CarFileName = msg.CarFileName,
+                BaguetteBytesLen = bagLen,
+                CCCBytesLen = cccLen,
+                BytesArrayIndex = 0
+            });
+        }
 
-        // Stock car — no data transfer needed. Immediately signal loading complete.
         Send(player.EndPoint, false, new MsgCarsLoadingStateToClient
         {
             PlayerIDs = [msg.PlayerID],
             LoadingPercentages = [100f]
         });
 
-        // Auto-ready and broadcast ready states so client can enter free drive
         _playerReadyStates[msg.PlayerID] = true;
         BroadcastReadyStates();
     }
@@ -813,73 +828,68 @@ public class GameServer : IDisposable
         _players.ResetTimeout(msg.PlayerID);
 
         if (!_carLoadStates.TryGetValue(msg.PlayerID, out var state))
+            return;
+
+        bool isBag = msg.IsBaguetteFile;
+        int pkgIdx = msg.BytesArrayIndex;
+        int byteOffset = pkgIdx * 480;
+        byte[] dest = isBag ? state.BaguetteData : state.CCCData;
+        int totalLen = isBag ? state.BaguetteBytesLen : state.CCCBytesLen;
+
+        if (byteOffset + msg.Bytes.Length > dest.Length)
+            return;
+
+        msg.Bytes.CopyTo(dest, byteOffset);
+
+        // Forward this chunk to all other players immediately
+        foreach (var p in _players.Players)
         {
-            state = new PlayerCarLoadState();
-            _carLoadStates[msg.PlayerID] = state;
-        }
-
-        state.IsBaguette = msg.IsBaguetteFile;
-        if (string.IsNullOrEmpty(state.CarFileName))
-            state.CarFileName = msg.CarFileName;
-        state.ExpectedHash = msg.HashCode;
-
-        // Accumulate car data
-        if (msg.Bytes.Length > 0)
-        {
-            int startIdx = msg.BytesArrayIndex >= 0 ? msg.BytesArrayIndex : state.CarData.Count;
-            // Pad or extend list to fit
-            while (state.CarData.Count < startIdx + msg.Bytes.Length)
-                state.CarData.Add(0);
-            for (int i = 0; i < msg.Bytes.Length; i++)
-                state.CarData[startIdx + i] = msg.Bytes[i];
-        }
-
-        bool isComplete = state.BaguetteBytesLen > 0 && state.CarData.Count >= state.BaguetteBytesLen;
-        if (isComplete)
-        {
-            Console.WriteLine($"[CarData] Player {msg.PlayerID} car data complete ({state.CarData.Count} bytes)");
-
-            // Send loading state to all players
-            var loadingMsg = new MsgCarsLoadingStateToClient
+            if (p.PlayerID == msg.PlayerID) continue;
+            Send(p.EndPoint, false, new MsgCarDataToClient
             {
-                PlayerIDs = [msg.PlayerID],
-                LoadingPercentages = [100f]
-            };
-            Broadcast(false, loadingMsg);
-
-            // Forward car data to other players in chunks
-            ForwardCarDataToOthers(msg.PlayerID, state);
-        }
-    }
-
-    private void ForwardCarDataToOthers(byte sourcePlayerID, PlayerCarLoadState state)
-    {
-        int maxChunk = 490;
-        int offset = 0;
-        var dataArr = state.CarData.ToArray();
-        while (offset < dataArr.Length)
-        {
-            int chunkSize = Math.Min(maxChunk, dataArr.Length - offset);
-            var chunk = new byte[chunkSize];
-            Array.Copy(dataArr, offset, chunk, 0, chunkSize);
-
-            var carMsg = new MsgCarDataToClient
-            {
-                PlayerID = sourcePlayerID,
-                IsBaguetteFile = state.IsBaguette,
+                PlayerID = msg.PlayerID,
+                IsBaguetteFile = isBag,
                 CarFileName = state.CarFileName,
-                BaguetteBytesLen = dataArr.Length,
+                BaguetteBytesLen = state.BaguetteBytesLen,
                 CCCBytesLen = state.CCCBytesLen,
-                BytesArrayIndex = offset,
-                Bytes = chunk,
-                HashCode = state.ExpectedHash
-            };
+                BytesArrayIndex = pkgIdx,
+                Bytes = msg.Bytes,
+                HashCode = msg.HashCode
+            });
+        }
 
-            foreach (var p in _players.Players)
-                if (p.PlayerID != sourcePlayerID)
-                    Send(p.EndPoint, false, carMsg);
-
-            offset += chunkSize;
+        // Check if we need more chunks
+        int nextPkg = pkgIdx + 1;
+        if (nextPkg * 480 < totalLen)
+        {
+            Send(ep, false, new MsgRequestCarDataToClient
+            {
+                PlayerID = msg.PlayerID,
+                PlayerIDOfWhomCarIsRequested = msg.PlayerID,
+                IsBaguetteFile = isBag,
+                CarFileName = state.CarFileName,
+                BaguetteBytesLen = state.BaguetteBytesLen,
+                CCCBytesLen = state.CCCBytesLen,
+                BytesArrayIndex = nextPkg
+            });
+        }
+        else if (isBag && state.CCCBytesLen > 0)
+        {
+            // Baguette done — start requesting CCC
+            Send(ep, false, new MsgRequestCarDataToClient
+            {
+                PlayerID = msg.PlayerID,
+                PlayerIDOfWhomCarIsRequested = msg.PlayerID,
+                IsBaguetteFile = false,
+                CarFileName = state.CarFileName,
+                BaguetteBytesLen = state.BaguetteBytesLen,
+                CCCBytesLen = state.CCCBytesLen,
+                BytesArrayIndex = 0
+            });
+        }
+        else
+        {
+            state.DataComplete = true;
         }
     }
 
@@ -890,31 +900,84 @@ public class GameServer : IDisposable
         _players.ResetTimeout(msg.PlayerID);
 
         byte targetPid = msg.PlayerIDOfWhomCarIsRequested;
-        Console.WriteLine($"[CarReq] Player {msg.PlayerID} requests car data of player {targetPid}");
 
-        // If we have the requested player's car data, send it
-        if (_carLoadStates.TryGetValue(targetPid, out var state) && state.CarData.Count > 0)
+        if (!_carLoadStates.TryGetValue(targetPid, out var state))
         {
-            ForwardCarDataToOthers(msg.PlayerID, state);
-        }
-        else
-        {
-            // No car data available — respond with empty to let client proceed
-            var carMsg = new MsgCarDataToClient
+            // No car data known for this player — send empty to let client proceed
+            Send(player.EndPoint, false, new MsgCarDataToClient
             {
                 PlayerID = targetPid,
                 IsBaguetteFile = false,
                 CarFileName = "",
-                BaguetteBytesLen = 0,
-                CCCBytesLen = 0,
-                BytesArrayIndex = 0,
+                BaguetteBytesLen = -1,
+                CCCBytesLen = -1,
+                BytesArrayIndex = -1,
                 Bytes = [],
                 HashCode = 0
-            };
-            Send(player.EndPoint, false, carMsg);
+            });
+        }
+        else if (state.DataComplete)
+        {
+            // Forward all chunks to the requesting client
+            int bagPkgs = state.BaguetteBytesLen > 0 ? (state.BaguetteBytesLen - 1) / 480 + 1 : 0;
+            int cccPkgs = state.CCCBytesLen > 0 ? (state.CCCBytesLen - 1) / 480 + 1 : 0;
+
+            for (int i = 0; i < bagPkgs; i++)
+            {
+                int off = i * 480;
+                int len = Math.Min(480, state.BaguetteBytesLen - off);
+                var chunk = new byte[len];
+                Array.Copy(state.BaguetteData, off, chunk, 0, len);
+                Send(player.EndPoint, false, new MsgCarDataToClient
+                {
+                    PlayerID = targetPid,
+                    IsBaguetteFile = true,
+                    CarFileName = state.CarFileName,
+                    BaguetteBytesLen = state.BaguetteBytesLen,
+                    CCCBytesLen = state.CCCBytesLen,
+                    BytesArrayIndex = i,
+                    Bytes = chunk,
+                    HashCode = 0
+                });
+            }
+            for (int i = 0; i < cccPkgs; i++)
+            {
+                int off = i * 480;
+                int len = Math.Min(480, state.CCCBytesLen - off);
+                var chunk = new byte[len];
+                Array.Copy(state.CCCData, off, chunk, 0, len);
+                Send(player.EndPoint, false, new MsgCarDataToClient
+                {
+                    PlayerID = targetPid,
+                    IsBaguetteFile = false,
+                    CarFileName = state.CarFileName,
+                    BaguetteBytesLen = state.BaguetteBytesLen,
+                    CCCBytesLen = state.CCCBytesLen,
+                    BytesArrayIndex = i,
+                    Bytes = chunk,
+                    HashCode = 0
+                });
+            }
+        }
+        else
+        {
+            // Data not complete yet — forward request to car owner
+            var targetPlayer = _players.GetPlayerByID(targetPid);
+            if (targetPlayer != null)
+            {
+                Send(targetPlayer.EndPoint, false, new MsgRequestCarDataToClient
+                {
+                    PlayerID = targetPid,
+                    PlayerIDOfWhomCarIsRequested = targetPid,
+                    IsBaguetteFile = msg.IsBaguetteFile,
+                    CarFileName = msg.CarFileName,
+                    BaguetteBytesLen = msg.BaguetteBytesLen,
+                    CCCBytesLen = msg.CCCBytesLen,
+                    BytesArrayIndex = msg.BytesArrayIndex
+                });
+            }
         }
 
-        // Send loading state for the requested player (100%)
         var loadingMsg = new MsgCarsLoadingStateToClient
         {
             PlayerIDs = [targetPid],
@@ -922,7 +985,6 @@ public class GameServer : IDisposable
         };
         Send(player.EndPoint, false, loadingMsg);
 
-        // Auto-ready the requesting player and broadcast ready states
         _playerReadyStates[msg.PlayerID] = true;
         BroadcastReadyStates();
     }
@@ -967,7 +1029,6 @@ public class GameServer : IDisposable
         _players.ResetTimeout(msg.PlayerID);
 
         _playerReadyStates[msg.PlayerID] = msg.IsPlayerReady;
-        Console.WriteLine($"[Ready] Player {msg.PlayerID} ready={msg.IsPlayerReady}");
 
         // Broadcast player ready state
         BroadcastReadyStates();
@@ -1009,8 +1070,6 @@ public class GameServer : IDisposable
         if (player == null) return;
         _players.ResetTimeout(msg.PlayerID);
 
-        Console.WriteLine($"[Repair] Player {msg.PlayerID} repair={msg.IsRepairInsteadOfReset}");
-
         Broadcast(true, new RepairClientMsg
         {
             PlayerID = msg.PlayerID,
@@ -1023,8 +1082,6 @@ public class GameServer : IDisposable
         var player = _players.GetPlayerByID(msg.PlayerID);
         if (player == null) return;
         _players.ResetTimeout(msg.PlayerID);
-
-        Console.WriteLine($"[Damage] Player {msg.PlayerID} destroyed {msg.DestroyedPartsIDs.Length} parts (parent={msg.PartParentID})");
 
         // Broadcast DestroyedPartsMsg (ID 11) - the message the client actually listens for
         Broadcast(false, new DestroyedPartsMsg
@@ -1050,7 +1107,6 @@ public class GameServer : IDisposable
             if (_playerStates.TryGetValue(msg.PlayerID, out var ps))
             {
                 ps.Health = 100f;
-                Console.WriteLine($"[Health] Player {msg.PlayerID} restored to 100% (mode={msg.CarStateMode})");
             }
         }
     }
@@ -1080,19 +1136,10 @@ public class GameServer : IDisposable
         _players.ResetTimeout(msg.PlayerID);
 
         _playerReadyStates[msg.PlayerID] = msg.IsSelfReady;
-        Console.WriteLine($"[Ready] Player {msg.PlayerID} self-ready={msg.IsSelfReady}");
         BroadcastReadyStates();
     }
 
-    private void HandleCommandMsg(IPEndPoint ep, MsgCommandToServer msg)
-    {
-        var player = _players.GetPlayerByID(msg.PlayerID);
-        if (player == null) return;
-        _players.ResetTimeout(msg.PlayerID);
-
-        var cmdLine = string.Join(" ", msg.CommandArgs);
-        Console.WriteLine($"[Command] Player {msg.PlayerID}: {cmdLine}");
-    }
+    private static void HandleCommandMsg(IPEndPoint _ep, MsgCommandToServer _msg) { }
 
     private void HandleSetSpawnPoint(IPEndPoint ep, SetSpawnPointMsgToServer msg)
     {
@@ -1223,6 +1270,7 @@ public class GameServer : IDisposable
                     if (target != null)
                     {
                         _log.Info($"Admin {player.PlayerName} kicked {target.PlayerName}");
+                        _ = SendWebhookAsync($"**{player.PlayerName}** kicked **{target.PlayerName}**");
                         SendChat(target.EndPoint, "Kicked by admin");
                         _players.RemovePlayer(kid);
                         BroadcastPlayerList();
@@ -1242,6 +1290,7 @@ public class GameServer : IDisposable
                             _bans.BanSteamId(target.CSteamID);
                             _bans.BanIP(target.EndPoint.Address);
                             _log.Info($"Admin {player.PlayerName} banned {target.PlayerName}");
+                            _ = SendWebhookAsync($"**{player.PlayerName}** banned **{target.PlayerName}**");
                             SendChat(target.EndPoint, "You have been banned");
                             _players.RemovePlayer(banId);
                             BroadcastPlayerList();
@@ -1267,6 +1316,7 @@ public class GameServer : IDisposable
                     if (target != null)
                     {
                         _log.Info($"Admin {player.PlayerName} slayed {target.PlayerName}");
+                        _ = SendWebhookAsync($"**{player.PlayerName}** slayed **{target.PlayerName}**");
                         Send(target.EndPoint, true, new RepairClientMsg
                         {
                             PlayerID = slayId,
@@ -1282,6 +1332,7 @@ public class GameServer : IDisposable
                 {
                     var text = string.Join(" ", args);
                     _log.Info($"Admin {player.PlayerName}: {text}");
+                    _ = SendWebhookAsync($"**{player.PlayerName}**: *{text}*");
                     Broadcast(false, new ChatToClientMsg { PlayerID = byte.MaxValue, Message = $"[Admin] {text}" });
                 }
                 break;
@@ -1303,6 +1354,7 @@ public class GameServer : IDisposable
                         _currentIslandID = setMap.Id;
                         BroadcastIslandInfo();
                         Broadcast(false, new ChatToClientMsg { PlayerID = byte.MaxValue, Message = $"[Server] Map changed to {setMap.Name}" });
+                        _ = SendWebhookAsync($"**{player.PlayerName}** changed map to `{setMap.Name}`");
                     }
                     else
                     {
@@ -1548,6 +1600,7 @@ public class GameServer : IDisposable
     {
         BitConverter.GetBytes(factor).CopyTo(_serverSettings, 0);
         _log.Info($"CarsDamageFactor set to {factor}");
+        _ = SendWebhookAsync($"Damage factor set to `{factor}`");
         BroadcastServerSettings();
     }
 
@@ -1566,6 +1619,7 @@ public class GameServer : IDisposable
             BroadcastIslandInfo();
             _log.Info($"Vote passed: map changed to {_voteTargetIsland}");
             Broadcast(false, new ChatToClientMsg { PlayerID = byte.MaxValue, Message = $"Vote passed! Map changed to ID {_voteTargetIsland}" });
+            _ = SendWebhookAsync($"Vote passed! Map changed to `{_voteTargetIsland}`");
         }
         else
         {
@@ -1603,7 +1657,7 @@ public class GameServer : IDisposable
                 names.Add(state.CarFileName);
                 baguetteLens.Add(state.BaguetteBytesLen);
                 cccLens.Add(state.CCCBytesLen);
-                upToDate.Add(true);
+                upToDate.Add(state.DataComplete);
             }
             else
             {
