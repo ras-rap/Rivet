@@ -44,6 +44,7 @@ public class GameServer : IDisposable
     private readonly Dictionary<byte, SpawnPose> _playerSpawns = new();
     private float _readyListTimer;
     private float _carDataStateTimer;
+    private float _rigSyncTimer;
     private float _settingsTimer;
     private float _carListTimer;
     private byte[] _serverSettings = null!;
@@ -62,6 +63,10 @@ public class GameServer : IDisposable
         public float PosX, PosY, PosZ;
         public float RotX, RotY, RotZ;
         public float VelX, VelY, VelZ;
+        public float[] PosXArr = [], PosYArr = [], PosZArr = [];
+        public float[] RotXArr = [], RotYArr = [], RotZArr = [];
+        public float[] VelXArr = [], VelYArr = [], VelZArr = [];
+        public byte[] TransformIDs = [];
     }
 
     private class SpawnPose
@@ -337,6 +342,15 @@ public class GameServer : IDisposable
             BroadcastAllPlayerCars();
         }
 
+        // Rigidbody sync (AllRigsInfoMsg) - sends transform data for all players
+        // Original RigsSyncerServer runs at syncFrequency * 0.5 = ~0.15s
+        _rigSyncTimer += dt;
+        if (_rigSyncTimer >= 0.15f)
+        {
+            _rigSyncTimer -= 0.15f;
+            BroadcastAllRigsInfo();
+        }
+
         // Crash detection via velocity monitoring
         foreach (var p in _players.Players)
         {
@@ -541,6 +555,13 @@ public class GameServer : IDisposable
             ps.LastActivityTime = _time;
         }
 
+        // Store full transform arrays for AllRigsInfoMsg broadcast
+        ps.TransformIDs = msg.IDs;
+        ps.PosXArr = msg.PosX; ps.PosYArr = msg.PosY; ps.PosZArr = msg.PosZ;
+        ps.RotXArr = msg.RotX; ps.RotYArr = msg.RotY; ps.RotZArr = msg.RotZ;
+        ps.VelXArr = msg.VelX; ps.VelYArr = msg.VelY; ps.VelZArr = msg.VelZ;
+
+        // Keep instant relay for MsgTransformSyncToClient (legacy, may be unused by client for remote cars)
         var relay = new MsgTransformSyncToClient
         {
             PlayerIDs = [msg.PlayerID],
@@ -1676,6 +1697,87 @@ public class GameServer : IDisposable
             CCCBytesLen = cccLens.ToArray(),
             IsServerDataUpToDate = upToDate.ToArray()
         });
+    }
+
+    private void BroadcastAllRigsInfo()
+    {
+        if (_players.PlayerCount < 2) return;
+
+        var players = _players.Players;
+        float globalTime = _globalTime;
+
+        // Build per-player transform collections
+        var allPlayerIDs = new List<byte>();
+        var allRigIDs = new List<ushort>();
+        var allPositions = new List<Vec3>();
+        var allRotations = new List<Vec3>();
+        var allVelocities = new List<Vec3>();
+        var allAngVelocities = new List<Vec3>();
+
+        foreach (var p in players)
+        {
+            if (!_playerStates.TryGetValue(p.PlayerID, out var ps))
+                continue;
+            int count = ps.TransformIDs.Length;
+            for (int i = 0; i < count; i++)
+            {
+                allPlayerIDs.Add(p.PlayerID);
+                allRigIDs.Add((ushort)i);
+                allPositions.Add(new Vec3(
+                    i < ps.PosXArr.Length ? ps.PosXArr[i] : ps.PosX,
+                    i < ps.PosYArr.Length ? ps.PosYArr[i] : ps.PosY,
+                    i < ps.PosZArr.Length ? ps.PosZArr[i] : ps.PosZ));
+                allRotations.Add(new Vec3(
+                    i < ps.RotXArr.Length ? ps.RotXArr[i] : ps.RotX,
+                    i < ps.RotYArr.Length ? ps.RotYArr[i] : ps.RotY,
+                    i < ps.RotZArr.Length ? ps.RotZArr[i] : ps.RotZ));
+                allVelocities.Add(new Vec3(
+                    i < ps.VelXArr.Length ? ps.VelXArr[i] : ps.VelX,
+                    i < ps.VelYArr.Length ? ps.VelYArr[i] : ps.VelY,
+                    i < ps.VelZArr.Length ? ps.VelZArr[i] : ps.VelZ));
+                allAngVelocities.Add(new Vec3(0, 0, 0));
+            }
+        }
+
+        // Send to each client, excluding their own data (original server filters this)
+        var ownIDs = new HashSet<byte>();
+        foreach (var target in players)
+        {
+            ownIDs.Clear();
+            ownIDs.Add(target.PlayerID);
+
+            var pIDs = new List<byte>();
+            var rIDs = new List<ushort>();
+            var pos = new List<Vec3>();
+            var rot = new List<Vec3>();
+            var vel = new List<Vec3>();
+            var ang = new List<Vec3>();
+
+            for (int i = 0; i < allPlayerIDs.Count; i++)
+            {
+                if (ownIDs.Contains(allPlayerIDs[i]))
+                    continue;
+                pIDs.Add(allPlayerIDs[i]);
+                rIDs.Add(allRigIDs[i]);
+                pos.Add(allPositions[i]);
+                rot.Add(allRotations[i]);
+                vel.Add(allVelocities[i]);
+                ang.Add(allAngVelocities[i]);
+            }
+
+            if (pIDs.Count == 0) continue;
+
+            Send(target.EndPoint, false, new AllRigsInfoMsg
+            {
+                PlayerIDs = pIDs.ToArray(),
+                RigidbodyIDs = rIDs.ToArray(),
+                Positions = pos.ToArray(),
+                Rotations = rot.ToArray(),
+                Velocities = vel.ToArray(),
+                AngularVelocities = ang.ToArray(),
+                GlobalTime = globalTime
+            });
+        }
     }
 
     private void BroadcastAllPlayerCars()

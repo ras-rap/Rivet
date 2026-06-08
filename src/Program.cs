@@ -91,4 +91,5 @@ static void RegisterMessages()
     MessageRegistry.Register<MsgCommandToServer>(MsgId.MsgCommandToServer);
     MessageRegistry.Register<SetSpawnPointMsgToServer>(MsgId.SetSpawnPointMsgToServer);
     MessageRegistry.Register<MsgMMGameServerPingToMatchmaking>(MsgId.MsgMMGameServerPingToMatchmaking);
+    MessageRegistry.Register<AllRigsInfoMsg>(MsgId.AllRigsInfoMsg);
 }

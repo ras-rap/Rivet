@@ -837,3 +837,26 @@ public class MsgCommandToServer : PlayerIDMsg
     protected override List<object> Serialize() { var l = base.Serialize(); l.Add(CommandArgs); return l; }
     protected override void Deserialize(List<object> fields) { base.Deserialize(fields); CommandArgs = (string[])fields[1]; }
 }
+
+public class AllRigsInfoMsg : DataObject
+{
+    public byte[] PlayerIDs { get; set; } = [];
+    public ushort[] RigidbodyIDs { get; set; } = [];
+    public Vec3[] Positions { get; set; } = [];
+    public Vec3[] Rotations { get; set; } = [];
+    public Vec3[] Velocities { get; set; } = [];
+    public Vec3[] AngularVelocities { get; set; } = [];
+    public float GlobalTime { get; set; }
+
+    protected override List<object> Serialize() => new()
+    {
+        PlayerIDs, RigidbodyIDs, Positions, Rotations, Velocities, AngularVelocities, GlobalTime
+    };
+    protected override void Deserialize(List<object> fields)
+    {
+        PlayerIDs = (byte[])fields[0]; RigidbodyIDs = (ushort[])fields[1];
+        Positions = (Vec3[])fields[2]; Rotations = (Vec3[])fields[3];
+        Velocities = (Vec3[])fields[4]; AngularVelocities = (Vec3[])fields[5];
+        GlobalTime = (float)fields[6];
+    }
+}
