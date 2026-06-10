@@ -44,7 +44,6 @@ public class GameServer : IDisposable
     private readonly Dictionary<byte, SpawnPose> _playerSpawns = new();
     private float _readyListTimer;
     private float _carDataStateTimer;
-    private float _rigSyncTimer;
     private float _settingsTimer;
     private float _carListTimer;
     private byte[] _serverSettings = null!;
@@ -342,14 +341,10 @@ public class GameServer : IDisposable
             BroadcastAllPlayerCars();
         }
 
-        // Rigidbody sync (AllRigsInfoMsg) - sends transform data for all players
-        // Original RigsSyncerServer runs at syncFrequency * 0.5 = ~0.15s
-        _rigSyncTimer += dt;
-        if (_rigSyncTimer >= 0.15f)
-        {
-            _rigSyncTimer -= 0.15f;
-            BroadcastAllRigsInfo();
-        }
+        // Disabled: AllRigsInfoMsg broadcast conflicts with IS_PLAIN_CSHARP_SERVER=true mode.
+        // The client deactivates RigsSyncerClient (PlainCSharpServerManager line 40) but the
+        // network listener still fires, causing syncRigidbody errors. Transform data is relayed
+        // via MsgTransformSyncToClient instead (in HandleTransformSync).
 
         // Crash detection via velocity monitoring
         foreach (var p in _players.Players)
@@ -561,10 +556,14 @@ public class GameServer : IDisposable
         ps.RotXArr = msg.RotX; ps.RotYArr = msg.RotY; ps.RotZArr = msg.RotZ;
         ps.VelXArr = msg.VelX; ps.VelYArr = msg.VelY; ps.VelZArr = msg.VelZ;
 
-        // Keep instant relay for MsgTransformSyncToClient (legacy, may be unused by client for remote cars)
+        // Relay transform data to other players as MsgTransformSyncToClient
+        // PlayerIDs must match the length of transform arrays — each entry has its own playerID
+        var pids = new byte[msg.IDs.Length];
+        Array.Fill(pids, msg.PlayerID);
+
         var relay = new MsgTransformSyncToClient
         {
-            PlayerIDs = [msg.PlayerID],
+            PlayerIDs = pids,
             IDs = msg.IDs,
             PosX = msg.PosX, PosY = msg.PosY, PosZ = msg.PosZ,
             RotX = msg.RotX, RotY = msg.RotY, RotZ = msg.RotZ,
