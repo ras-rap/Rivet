@@ -496,30 +496,13 @@ public class GameServer : IDisposable
     private void HandleInputs(IPEndPoint ep, InputsMsg msg)
     {
         var player = _players.GetPlayerByID(msg.PlayerID);
-        if (player == null)
-        {
-            Console.WriteLine($"[Input] INPUT FROM UNKNOWN PLAYER ID {msg.PlayerID} from {ep}");
-            return;
-        }
+        if (player == null) return;
         _players.ResetTimeout(msg.PlayerID);
 
-        // Debug: log first input from each player
-        if (player.LastInputTime == 0)
-        {
-            Console.WriteLine($"[Input] First input from {player.PlayerName} (ID {msg.PlayerID}): Axis0={msg.Axis0} Axis1={msg.Axis1} InputMap=0x{msg.InputMap:X}");
-        }
-        player.LastInputTime = _globalTime;
-
         var all = BuildAllInputs(msg);
-        int relayCount = 0;
+        // Broadcast to ALL players including self (needed for solo play and client prediction)
         foreach (var other in _players.Players)
-            if (other.PlayerID != msg.PlayerID)
-            {
-                Send(other.EndPoint, false, all);
-                relayCount++;
-            }
-        if (relayCount > 0)
-            Console.WriteLine($"[Input] Relayed inputs from {msg.PlayerID} to {relayCount} other players");
+            Send(other.EndPoint, false, all);
     }
 
     private static AllInputsMsg BuildAllInputs(InputsMsg msg) => new()
