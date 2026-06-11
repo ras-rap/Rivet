@@ -341,10 +341,9 @@ public class GameServer : IDisposable
             BroadcastAllPlayerCars();
         }
 
-        // Disabled: AllRigsInfoMsg broadcast conflicts with IS_PLAIN_CSHARP_SERVER=true mode.
-        // The client deactivates RigsSyncerClient (PlainCSharpServerManager line 40) but the
-        // network listener still fires, causing syncRigidbody errors. Transform data is relayed
-        // via MsgTransformSyncToClient instead (in HandleTransformSync).
+        // Broadcast AllRigsInfoMsg for rigidbody sync (plain C# clients expect this)
+        // Data sourced from MsgTransformSyncToServer handler via _playerStates
+        BroadcastAllRigsInfo();
 
         // Crash detection via velocity monitoring
         foreach (var p in _players.Players)

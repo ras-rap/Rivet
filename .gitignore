@@ -4,4 +4,4 @@ rivet.json
 *.log
 src/bin/
 src/obj/
-
+.omo
